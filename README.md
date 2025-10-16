@@ -15,3 +15,11 @@ python compute_god.py 输入图片 输出图片
 ```
 
 可通过 `--noise-intensity` 调整雪花噪点强度。
+
+若仅需了解“千里冰封”效果的抽象结构，可执行：
+
+```bash
+python compute_god.py --structure
+```
+
+默认以文本方式输出各处理步骤，可搭配 `--structure-format json` 获取 JSON 结构化描述。
