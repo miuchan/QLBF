@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
+import sys
+from typing import Any, List, Sequence
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
@@ -56,15 +59,111 @@ def apply_frozen_effect(image: Image.Image, config: EffectConfig | None = None) 
     return cooled
 
 
+def describe_frozen_effect(config: EffectConfig | None = None) -> list[dict[str, Any]]:
+    """Return a structured description of the 千里冰封效果 pipeline."""
+
+    if config is None:
+        config = EffectConfig()
+
+    return [
+        {
+            "stage": "preprocess",
+            "operation": "convert_to_rgb",
+            "description": "将输入图像转换为 RGB 三通道以确保后续颜色处理一致。",
+        },
+        {
+            "stage": "tone_mapping",
+            "operation": "grayscale_contrast",
+            "description": "生成灰度底图并提升对比度，为冰霜纹理提供基础的明暗分离。",
+            "parameters": {"contrast": config.contrast},
+        },
+        {
+            "stage": "tone_mapping",
+            "operation": "dual_tone_colorize",
+            "description": "以冷色调重新着色，形成整体的蓝青色氛围。",
+            "parameters": {
+                "dark": config.cold_tint_dark,
+                "light": config.cold_tint_light,
+            },
+        },
+        {
+            "stage": "detail_softening",
+            "operation": "gaussian_blur",
+            "description": "轻微模糊以柔化景别，使景深呈现出远景的朦胧感。",
+            "parameters": {"radius": config.blur_radius},
+        },
+        {
+            "stage": "atmosphere",
+            "operation": "noise_colorize",
+            "description": "生成噪点并着色，模拟飘散的霜雾与雪粒。",
+            "parameters": {
+                "intensity": config.noise_intensity,
+                "alpha": config.noise_alpha,
+            },
+        },
+        {
+            "stage": "texture_enhance",
+            "operation": "edge_crystallize",
+            "description": "基于边缘检测提取轮廓，放大亮度营造晶体折射感。",
+            "parameters": {"boost": config.crystal_boost},
+        },
+        {
+            "stage": "composite",
+            "operation": "additive_blend",
+            "description": "将噪点层与晶体层叠加，形成层次丰富的冰封纹理。",
+        },
+        {
+            "stage": "final_adjust",
+            "operation": "brightness_saturation",
+            "description": "整体提亮并降低饱和度，使画面更显寒冷清冽。",
+            "parameters": {
+                "brightness": config.brightness,
+                "saturation": config.saturation,
+            },
+        },
+    ]
+
+
+def format_structure(
+    structure: Sequence[dict[str, Any]],
+    *,
+    indent: str = "  ",
+) -> str:
+    """Return a human-readable representation of the structure."""
+
+    lines: List[str] = []
+    for idx, block in enumerate(structure, start=1):
+        header = f"步骤 {idx}: {block['operation']}"
+        lines.append(header)
+        lines.append(f"{indent}阶段: {block['stage']}")
+        lines.append(f"{indent}说明: {block['description']}")
+        params = block.get("parameters")
+        if params:
+            for key, value in params.items():
+                lines.append(f"{indent}参数-{key}: {value}")
+    return "\n".join(lines)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Apply a 千里冰封 frozen effect to an image")
-    parser.add_argument("input", type=Path, help="Path to the input image")
-    parser.add_argument("output", type=Path, help="Where to save the frosted image")
+    parser.add_argument("input", type=Path, nargs="?", help="Path to the input image")
+    parser.add_argument("output", type=Path, nargs="?", help="Where to save the frosted image")
     parser.add_argument(
         "--noise-intensity",
         type=float,
         default=None,
         help="Noise intensity to simulate frost particles",
+    )
+    parser.add_argument(
+        "--structure",
+        action="store_true",
+        help="仅输出千里冰封效果的抽象结构而不处理图像",
+    )
+    parser.add_argument(
+        "--structure-format",
+        choices=("text", "json"),
+        default="text",
+        help="结构输出格式，默认为 text",
     )
     return parser.parse_args()
 
@@ -74,6 +173,18 @@ def main() -> None:
     config = EffectConfig()
     if args.noise_intensity is not None:
         config.noise_intensity = args.noise_intensity
+
+    if args.structure:
+        structure = describe_frozen_effect(config)
+        if args.structure_format == "json":
+            json.dump(structure, fp=sys.stdout, ensure_ascii=False, indent=2)
+            sys.stdout.write("\n")
+        else:
+            print(format_structure(structure))
+        return
+
+    if args.input is None or args.output is None:
+        raise SystemExit("必须提供输入与输出路径，或使用 --structure 查看抽象结构。")
 
     with Image.open(args.input) as img:
         frosted = apply_frozen_effect(img, config)
